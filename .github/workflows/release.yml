@@ -33,7 +33,7 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
-          tauriScript: npm run build  # 指定正确的构建命令
+          tauriScript: build  # 指定正确的构建命令
           tagName: ${{ github.ref_name }} # 使用推送的标签名（如 v1.1.1）
           releaseName: 'QuickTask ${{ github.ref_name }}'
           releaseBody: |
