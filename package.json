@@ -1,6 +1,6 @@
 {
   "name": "quicktask",
-  "version": "1.1.0",
+  "version": "1.1.1",
   "description": "A minimalist task management desktop application",
   "type": "module",
   "scripts": {
