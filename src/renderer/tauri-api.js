@@ -26,6 +26,19 @@ export const tauriAPI = {
   
   loadLanguage: async () => {
     return await invoke('load_language');
+  },
+  
+  // 开机自启动相关 API
+  enableAutostart: async () => {
+    await invoke('enable_autostart');
+  },
+  
+  disableAutostart: async () => {
+    await invoke('disable_autostart');
+  },
+  
+  isAutostartEnabled: async () => {
+    return await invoke('is_autostart_enabled');
   }
 };
 

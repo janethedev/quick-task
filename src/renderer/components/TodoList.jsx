@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { List, Checkbox, Input, Button, Space, Flex, Typography, Empty, Dropdown } from 'antd';
-import { EditOutlined, DeleteOutlined, CheckOutlined, CloseOutlined, StarFilled, HolderOutlined, MoreOutlined } from '@ant-design/icons';
+import { EditOutlined, DeleteOutlined, CheckOutlined, CloseOutlined, HolderOutlined, MoreOutlined } from '@ant-design/icons';
 import { useTranslation } from 'react-i18next';
 import {
   DndContext,
@@ -61,9 +61,6 @@ function SortableTodoItem({ todo, editingId, editValue, setEditValue, handleStar
             checked={todo.completed}
             onChange={() => onToggleComplete(todo.id)}
           />
-          {/* {todo.important && (
-            <StarFilled style={{ color: '#faad14', fontSize: 14, marginRight: -4 }} />
-          )} */}
           {editingId === todo.id ? (
             <Space.Compact style={{ flex: 1, minWidth: 0 }}>
               <Input

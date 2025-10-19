@@ -1,8 +1,9 @@
 use std::fs;
 use tauri::Manager;
 use tauri::tray::{TrayIconBuilder, TrayIconEvent, MouseButton, MouseButtonState};
-use tauri::menu::{Menu, MenuItem, Submenu};
+use tauri::menu::{Menu, MenuItem, Submenu, CheckMenuItemBuilder};
 use serde::{Deserialize, Serialize};
+use tauri_plugin_autostart::{MacosLauncher, ManagerExt};
 
 // 窗口状态结构
 #[derive(Serialize, Deserialize, Debug)]
@@ -123,6 +124,27 @@ fn load_language(app: tauri::AppHandle) -> Result<String, String> {
     }
 }
 
+// 启用开机自启动
+#[tauri::command]
+fn enable_autostart(app: tauri::AppHandle) -> Result<(), String> {
+    app.autolaunch().enable()
+        .map_err(|e| e.to_string())
+}
+
+// 禁用开机自启动
+#[tauri::command]
+fn disable_autostart(app: tauri::AppHandle) -> Result<(), String> {
+    app.autolaunch().disable()
+        .map_err(|e| e.to_string())
+}
+
+// 检查开机自启动状态
+#[tauri::command]
+fn is_autostart_enabled(app: tauri::AppHandle) -> Result<bool, String> {
+    app.autolaunch().is_enabled()
+        .map_err(|e| e.to_string())
+}
+
 // 获取应用语言（从配置文件读取，默认英文）
 fn get_app_language(app: &tauri::AppHandle) -> String {
     if let Ok(app_dir) = app.path().app_data_dir() {
@@ -144,10 +166,10 @@ fn get_app_language(app: &tauri::AppHandle) -> String {
 fn build_tray_menu(app: &tauri::AppHandle, current_lang: &str) -> Result<Menu<tauri::Wry>, tauri::Error> {
     let is_chinese = current_lang.starts_with("zh");
     
-    let (show_text, lang_text, quit_text) = if is_chinese {
-        ("显示窗口", "语言", "退出")
+    let (show_text, lang_text, autostart_text, quit_text) = if is_chinese {
+        ("显示窗口", "语言", "开机自启", "退出")
     } else {
-        ("Show Window", "Language", "Quit")
+        ("Show Window", "Language", "Auto Launch", "Quit")
     };
     
     // 语言子菜单项
@@ -157,17 +179,24 @@ fn build_tray_menu(app: &tauri::AppHandle, current_lang: &str) -> Result<Menu<ta
     // 创建语言子菜单
     let lang_submenu = Submenu::with_items(app, lang_text, true, &[&zh_cn, &en_us])?;
     
+    // 检查当前开机自启动状态
+    let is_autostart_enabled = app.autolaunch().is_enabled().unwrap_or(false);
+    
     // 主菜单项
     let show_item = MenuItem::with_id(app, "show", show_text, true, None::<&str>)?;
+    let autostart_item = CheckMenuItemBuilder::with_id("autostart", autostart_text)
+        .checked(is_autostart_enabled)
+        .build(app)?;
     let quit_item = MenuItem::with_id(app, "quit", quit_text, true, None::<&str>)?;
     
     // 组装菜单
-    Menu::with_items(app, &[&show_item, &lang_submenu, &quit_item])
+    Menu::with_items(app, &[&show_item, &autostart_item, &lang_submenu, &quit_item])
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
   tauri::Builder::default()
+    .plugin(tauri_plugin_autostart::init(MacosLauncher::LaunchAgent, Some(vec![])))
     .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
       // 当用户尝试打开第二个实例时，显示并聚焦第一个实例的窗口
       if let Some(window) = app.get_webview_window("main") {
@@ -223,6 +252,22 @@ pub fn run() {
               // 通知前端刷新
               if let Some(window) = app.get_webview_window("main") {
                 let _ = window.eval("window.location.reload()");
+              }
+            }
+            "autostart" => {
+              // 切换开机自启动
+              let is_enabled = app.autolaunch().is_enabled().unwrap_or(false);
+              if is_enabled {
+                let _ = app.autolaunch().disable();
+              } else {
+                let _ = app.autolaunch().enable();
+              }
+              // 重建托盘菜单以更新复选框状态
+              let language = get_app_language(&app);
+              if let Ok(new_menu) = build_tray_menu(&app, &language) {
+                if let Some(tray) = app.tray_by_id("main") {
+                  let _ = tray.set_menu(Some(new_menu));
+                }
               }
             }
             "quit" => {
@@ -298,7 +343,10 @@ pub fn run() {
       toggle_always_on_top,
       save_window_state,
       save_language,
-      load_language
+      load_language,
+      enable_autostart,
+      disable_autostart,
+      is_autostart_enabled
     ])
     .run(tauri::generate_context!())
     .expect("error while running tauri application");
