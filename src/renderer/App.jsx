@@ -20,14 +20,20 @@ function App() {
   // 根据当前语言选择 Ant Design locale
   const antdLocale = i18n.language === 'zh-CN' ? zhCN : enUS;
 
-  // 排序待办事项：已完成的总是在未完成的后面，同状态内按 order 排序
+  // 排序待办事项：已完成的总是在未完成的后面，未完成中重要的在前面，同分组内按 order 排序
   const sortTodos = (todosToSort) => {
     return [...todosToSort].sort((a, b) => {
-      // 已完成的总是在未完成的后面
+      // 第一优先级：已完成的总是在未完成的后面
       if (a.completed !== b.completed) {
         return a.completed - b.completed;
       }
-      // 同状态内按 order 排序
+      
+      // 第二优先级：未完成任务中，重要的在前面
+      if (!a.completed && a.important !== b.important) {
+        return b.important - a.important; // true(1) - false(0) = 1，重要的排前面
+      }
+      
+      // 第三优先级：同状态、同重要性内按 order 排序
       return (a.order || 0) - (b.order || 0);
     });
   };
@@ -70,46 +76,22 @@ function App() {
 
   // 添加待办事项
   const handleAddTodo = (text) => {
-    const uncompletedTodos = todos.filter(todo => !todo.completed);
-    
-    let newOrder;
-    if (isImportant) {
-      // 新增重要任务：排在所有未完成重要任务的最前面
-      const uncompletedImportantTodos = uncompletedTodos.filter(todo => todo.important);
-      if (uncompletedImportantTodos.length > 0) {
-        newOrder = Math.min(...uncompletedImportantTodos.map(todo => todo.order || 0)) - 1;
-      } else {
-        // 没有重要任务，排在所有未完成任务的最前面
-        newOrder = uncompletedTodos.length > 0 
-          ? Math.min(...uncompletedTodos.map(todo => todo.order || 0)) - 1 
-          : 0;
-      }
-    } else {
-      // 新增普通任务：排在所有未完成普通任务的最前面
-      const uncompletedNormalTodos = uncompletedTodos.filter(todo => !todo.important);
-      if (uncompletedNormalTodos.length > 0) {
-        newOrder = Math.min(...uncompletedNormalTodos.map(todo => todo.order || 0)) - 1;
-      } else {
-        // 没有普通任务，排在所有未完成任务的最后面
-        newOrder = uncompletedTodos.length > 0 
-          ? Math.max(...uncompletedTodos.map(todo => todo.order || 0)) + 1 
-          : 0;
-      }
-    }
-    
     const newTodo = {
       id: Date.now(),
       text: text,
       completed: false,
       important: isImportant,
-      order: newOrder
+      order: -1 // 临时值，排序后会重新规范化
     };
 
     const newTodos = [...todos, newTodo];
+    // 先排序，确保新任务在正确的位置（重要任务在前）
     const sortedTodos = sortTodos(newTodos);
+    // 规范化 order 值，防止数值无限增长
+    const normalizedTodos = normalizeOrders(sortedTodos);
     
-    setTodos(sortedTodos);
-    saveTodos(sortedTodos);
+    setTodos(normalizedTodos);
+    saveTodos(normalizedTodos);
   };
 
   // 切换完成状态
@@ -126,30 +108,18 @@ function App() {
       playUncheckSound(); // 取消完成时播放（可选）
     }
     
-    // 如果从未完成变为已完成，移到已完成列表的末尾
-    // 如果从已完成变为未完成，移到未完成列表的末尾
-    let newOrder = todo.order;
-    if (newCompleted) {
-      // 变为已完成：order 设置为已完成项目中最大的 order + 1
-      const completedTodos = todos.filter(t => t.completed);
-      newOrder = completedTodos.length > 0 
-        ? Math.max(...completedTodos.map(t => t.order || 0)) + 1
-        : (todos.length > 0 ? Math.max(...todos.map(t => t.order || 0)) + 1 : 0);
-    } else {
-      // 变为未完成：order 设置为未完成项目中最大的 order + 1
-      const uncompletedTodos = todos.filter(t => !t.completed);
-      newOrder = uncompletedTodos.length > 0 
-        ? Math.max(...uncompletedTodos.map(t => t.order || 0)) + 1
-        : 0;
-    }
-    
+    // 更新完成状态
     const newTodos = todos.map(t =>
-      t.id === id ? { ...t, completed: newCompleted, order: newOrder } : t
+      t.id === id ? { ...t, completed: newCompleted } : t
     );
-    const sortedTodos = sortTodos(newTodos);
     
-    setTodos(sortedTodos);
-    saveTodos(sortedTodos);
+    // 重新排序（已完成的会自动移到后面，未完成的会根据 important 排序）
+    const sortedTodos = sortTodos(newTodos);
+    // 规范化 order 值
+    const normalizedTodos = normalizeOrders(sortedTodos);
+    
+    setTodos(normalizedTodos);
+    saveTodos(normalizedTodos);
   };
 
   // 删除待办事项
@@ -175,16 +145,24 @@ function App() {
     saveTodos(newTodos);
   };
 
-  // 处理拖拽排序
-  const handleReorder = (reorderedTodos) => {
-    // 更新 order 字段
-    const todosWithNewOrder = reorderedTodos.map((todo, index) => ({
+  // 规范化 order 值：重新分配为连续整数
+  const normalizeOrders = (todosToNormalize) => {
+    return todosToNormalize.map((todo, index) => ({
       ...todo,
       order: index
     }));
+  };
+
+  // 处理拖拽排序
+  const handleReorder = (reorderedTodos) => {
+    // 拖拽后需要重新规范化 order 值，并确保排序逻辑一致
+    const todosWithNewOrder = normalizeOrders(reorderedTodos);
     
-    setTodos(todosWithNewOrder);
-    saveTodos(todosWithNewOrder);
+    // 重新排序以确保分组逻辑（重要任务在前，已完成在后）
+    const sortedTodos = sortTodos(todosWithNewOrder);
+    
+    setTodos(sortedTodos);
+    saveTodos(sortedTodos);
   };
 
   // 统计信息
